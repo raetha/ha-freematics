@@ -1,0 +1,70 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a Freematics dongle",
+        "description": "Name the dongle, usually after the car it's in. Home Assistant then makes a webhook for it and shows its address, which goes into the dongle's ESPHome config.",
+        "data": {
+          "name": "Name"
+        },
+        "data_description": {
+          "name": "The device's name in Home Assistant, such as the car's."
+        }
+      },
+      "reconfigure": {
+        "title": "Show the webhook address",
+        "description": "Shows this dongle's webhook address again, and switches it to Home Assistant Cloud's address if you've subscribed since it was added."
+      }
+    },
+    "create_entry": {
+      "default": "Put this address in the dongle's ESPHome config, in ESPHome Device Builder's Secrets as `ha_webhook_url`:\n\n`{webhook_url}`\n\nKeep it private: it's the dongle's only key. You can show it again with Reconfigure."
+    },
+    "abort": {
+      "no_https_url": "The dongle needs an HTTPS address it can reach from the internet: subscribe to Home Assistant Cloud, or set an external HTTPS URL under Settings → System → Network.",
+      "webhook_url": "This dongle's webhook address, for the `ha_webhook_url` secret in ESPHome Device Builder:\n\n`{webhook_url}`"
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "moving": {
+        "name": "Moving"
+      }
+    },
+    "event": {
+      "trip": {
+        "name": "Trip",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "trip_started": "Trip started",
+              "trip_stopped": "Trip stopped"
+            }
+          }
+        }
+      }
+    },
+    "sensor": {
+      "speed": {
+        "name": "Speed"
+      },
+      "heading": {
+        "name": "Heading"
+      },
+      "altitude": {
+        "name": "Altitude"
+      },
+      "battery_voltage": {
+        "name": "Battery voltage"
+      },
+      "satellites": {
+        "name": "Satellites"
+      },
+      "hdop": {
+        "name": "HDOP"
+      },
+      "last_report": {
+        "name": "Last report"
+      }
+    }
+  }
+}
