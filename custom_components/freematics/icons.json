@@ -16,6 +16,9 @@
     "event": {
       "trip": {
         "default": "mdi:map-marker-path"
+      },
+      "impact": {
+        "default": "mdi:car-emergency"
       }
     },
     "sensor": {
@@ -39,6 +42,18 @@
       },
       "last_report": {
         "default": "mdi:clock-check-outline"
+      },
+      "last_trip_distance": {
+        "default": "mdi:map-marker-distance"
+      },
+      "last_trip_duration": {
+        "default": "mdi:timer-outline"
+      },
+      "last_trip_max_speed": {
+        "default": "mdi:speedometer"
+      },
+      "last_trip_average_speed": {
+        "default": "mdi:speedometer-medium"
       }
     }
   }

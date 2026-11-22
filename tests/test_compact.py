@@ -71,7 +71,8 @@ def test_an_empty_batch_is_valid():
     [
         b"",
         bytes([2, 0, 0, 0, 0, 0, 0]),  # another version
-        bytes([1, 0, 0, 0, 0, 0, 0, 0x20, 0]),  # unknown flag
+        bytes([1, 0, 0, 0, 0, 0, 0, 0x40, 0]),  # unknown flag
+        bytes([1, 0, 0, 0, 0, 0, 0, 0x20, 0, 1, 0x41, 7]),  # extra cut short
         bytes([1, 0, 0, 0, 0, 0, 0, 0x04, 0]),  # position cut short
         bytes([1, 0, 0, 0, 0, 0, 0, 0x08, 0]),  # altitude without a position
         bytes([1, 0, 0, 0, 0, 0, 0, 0x00, 0x80]),  # varint cut short
@@ -91,3 +92,13 @@ def test_bodies_are_base64():
         decode_body(b"not base64!")
     with pytest.raises(CompactError):
         decode_body(body)  # raw binary
+
+
+def test_unknown_extras_are_skipped():
+    # A heartbeat with an unknown 2-byte extra (id 9), an unknown
+    # length-prefixed one (id 10), then a temperature: newer dongles' extras
+    # don't stop an older integration.
+    header = bytes([1, 0, 0, 0, 0, 0, 0])
+    record = bytes([0x23, 0, 3, 0x49, 1, 2, 0xCA, 2, 7, 7, 0x01, 21])
+    (got,) = decode(header + record)[1]
+    assert got.kind == "heartbeat" and got.temperature == 21

@@ -18,3 +18,10 @@ METRES_PER_HDOP: Final = 5.0
 
 EVENT_TRIP_STARTED: Final = "trip_started"
 EVENT_TRIP_STOPPED: Final = "trip_stopped"
+EVENT_IMPACT: Final = "impact"
+
+# A dongle that's awake reports at least every heartbeat (15 minutes by
+# default), so a longer silence means it's out of coverage or off. Before it
+# sleeps it says when it reports next; it gets this much longer than that.
+AWAKE_SILENCE: Final = 45 * 60  # seconds
+SLEEP_GRACE: Final = 15 * 60  # seconds

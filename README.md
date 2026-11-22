@@ -3,9 +3,10 @@
 A Home Assistant integration for Freematics ONE+ GPS dongles running [ESPHome for Freematics](https://github.com/raetha/esphome-freematics). Each dongle posts compact batches of its positions and trips to a Home Assistant webhook, and the integration turns them into:
 
 - a device tracker, with an accuracy estimated from the satellite fix;
-- speed, heading, altitude and battery voltage sensors, and satellites, HDOP and last report as diagnostics;
-- a moving sensor, on from a trip's start to its stop;
-- a trip event entity (trip started, trip stopped) to automate on.
+- speed, heading, altitude, battery voltage and temperature sensors, and satellites, HDOP, cellular signal and last report as diagnostics;
+- a moving sensor, on from a trip's start to its stop, and a reporting sensor, off when the dongle has gone quiet for longer than it should (it says before sleeping when it will report next);
+- a trip event entity (trip started, trip stopped) to automate on, the stop carrying the trip's distance, duration, top and average speed, which also show as last-trip sensors;
+- an impact event entity, fired when the dongle's motion sensor measures a jolt beyond its threshold (4 g by default), with the peak and where it happened: an automation can tell the family or call for help.
 
 No Traccar server is needed, and it uses little cellular data: a record is about 11 bytes (15 as the base64 text that goes over the air), sent in batches every 2 minutes and at once when a trip starts or stops. Home Assistant can't store back-dated positions, so records sent late (after a coverage gap) update the device to the newest one without a track history; for drive history and replay, run Traccar as well (the dongle can report to both).
 

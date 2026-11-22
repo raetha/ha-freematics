@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
@@ -43,4 +44,10 @@ async def async_get_config_entry_diagnostics(
             device.position_time.isoformat() if device.position_time else None
         ),
         "battery_v": device.battery_v,
+        "temperature": device.temperature,
+        "signal": device.signal,
+        "sleeping_until": device.sleeping_until,
+        "report_due": device.report_due.isoformat() if device.report_due else None,
+        "on_a_trip": device.trip is not None,
+        "last_trip": asdict(device.last_trip) if device.last_trip else None,
     }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -14,7 +15,14 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .compact import Record
-from .const import DOMAIN, EVENT_TRIP_STARTED, EVENT_TRIP_STOPPED
+from .const import (
+    AWAKE_SILENCE,
+    DOMAIN,
+    EVENT_IMPACT,
+    EVENT_TRIP_STARTED,
+    EVENT_TRIP_STOPPED,
+    SLEEP_GRACE,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,13 +44,66 @@ class Position:
 
 
 @dataclass
-class TripEvent:
-    """A trip start or stop, with the time the dongle recorded it."""
+class TripSummary:
+    """A trip worked out from its records: every point the dongle sent."""
+
+    distance_km: float
+    duration_min: float
+    max_speed_kmh: int
+    average_speed_kmh: float | None  # None for a trip of no time
+
+
+@dataclass
+class Trip:
+    """A trip under way: what's been added up since its start."""
+
+    start: int  # Unix time
+    distance_m: float = 0.0
+    max_speed_kmh: int = 0
+    latitude: float | None = None  # the last point
+    longitude: float | None = None
+
+    def add(self, record: Record) -> None:
+        """Add a record's leg from the last point."""
+        if record.latitude is None or record.longitude is None:
+            return
+        if self.latitude is not None and self.longitude is not None:
+            self.distance_m += _metres(
+                self.latitude, self.longitude, record.latitude, record.longitude
+            )
+        self.latitude, self.longitude = record.latitude, record.longitude
+        self.max_speed_kmh = max(self.max_speed_kmh, record.speed_kmh or 0)
+
+    def summary(self, end: int) -> TripSummary:
+        """The trip, ending at end (Unix time)."""
+        seconds = max(0, end - self.start)
+        return TripSummary(
+            distance_km=round(self.distance_m / 1000, 2),
+            duration_min=round(seconds / 60, 1),
+            max_speed_kmh=self.max_speed_kmh,
+            average_speed_kmh=(
+                round(self.distance_m / seconds * 3.6, 1) if seconds else None
+            ),
+        )
+
+
+def _metres(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance (haversine)."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * 6_371_000 * math.asin(math.sqrt(a))
+
+
+@dataclass
+class DeviceEvent:
+    """A trip start or stop, or an impact, with the time the dongle recorded it."""
 
     event_type: str
     time: datetime
     latitude: float | None
     longitude: float | None
+    data: dict[str, Any]
 
 
 @dataclass
@@ -75,6 +136,12 @@ class FreematicsDevice:
         self.position_time: datetime | None = None
         self.moving: bool | None = None
         self.battery_v: float | None = None
+        self.temperature: int | None = None
+        self.signal: int | None = None
+        # The dongle said, before sleeping, it reports again by then (Unix time)
+        self.sleeping_until: int | None = None
+        self.trip: Trip | None = None
+        self.last_trip: TripSummary | None = None
         self.batches = 0
         self.records = 0
         self.repeats = 0
@@ -84,12 +151,23 @@ class FreematicsDevice:
         self.last_batch: BatchInfo | None = None
         self._unsaved = False
         self._update_listeners: set[CALLBACK_TYPE] = set()
-        self._event_listeners: set[Callable[[TripEvent], None]] = set()
+        self._event_listeners: set[Callable[[DeviceEvent], None]] = set()
 
     @property
     def last_report(self) -> datetime | None:
         """When the dongle recorded its newest record."""
         return datetime.fromtimestamp(self.last_time, UTC) if self.last_time else None
+
+    @property
+    def report_due(self) -> datetime | None:
+        """When the dongle should have reported again by (None: no report yet)."""
+        if not self.last_time:
+            return None
+        if self.sleeping_until is not None:
+            due = self.sleeping_until + SLEEP_GRACE
+        else:
+            due = self.last_time + AWAKE_SILENCE
+        return datetime.fromtimestamp(due, UTC)
 
     async def async_load(self) -> None:
         """Restore what was known before Home Assistant restarted."""
@@ -103,6 +181,13 @@ class FreematicsDevice:
             self.position_time = datetime.fromtimestamp(position_time, UTC)
         self.moving = data.get("moving")
         self.battery_v = data.get("battery_v")
+        self.temperature = data.get("temperature")
+        self.signal = data.get("signal")
+        self.sleeping_until = data.get("sleeping_until")
+        if (trip := data.get("trip")) is not None:
+            self.trip = Trip(**trip)
+        if (last_trip := data.get("last_trip")) is not None:
+            self.last_trip = TripSummary(**last_trip)
 
     def _data_to_save(self) -> dict[str, Any]:
         return {
@@ -113,6 +198,11 @@ class FreematicsDevice:
             ),
             "moving": self.moving,
             "battery_v": self.battery_v,
+            "temperature": self.temperature,
+            "signal": self.signal,
+            "sleeping_until": self.sleeping_until,
+            "trip": asdict(self.trip) if self.trip else None,
+            "last_trip": asdict(self.last_trip) if self.last_trip else None,
         }
 
     @callback
@@ -123,9 +213,10 @@ class FreematicsDevice:
 
     @callback
     def async_add_event_listener(
-        self, listener: Callable[[TripEvent], None]
+        self, listener: Callable[[DeviceEvent], None]
     ) -> CALLBACK_TYPE:
-        """Call listener with each trip start and stop; returns the remover."""
+        """Call listener with each trip start and stop and each impact; returns
+        the remover."""
         self._event_listeners.add(listener)
         return lambda: self._event_listeners.discard(listener)
 
@@ -155,7 +246,7 @@ class FreematicsDevice:
             len(records),
             size,
         )
-        events: list[TripEvent] = []
+        events: list[DeviceEvent] = []
         taken = 0
         for record in records:
             if record.time <= self.last_time:
@@ -187,16 +278,27 @@ class FreematicsDevice:
                 self.position_time = when
             if record.battery_v is not None:
                 self.battery_v = record.battery_v
-            if record.kind == "start":
-                self.moving = True
-                events.append(self._trip_event(EVENT_TRIP_STARTED, when, record))
-            elif record.kind == "stop":
-                self.moving = False
-                events.append(self._trip_event(EVENT_TRIP_STOPPED, when, record))
-            elif record.kind == "heartbeat":
-                self.moving = False
-            else:
-                self.moving = True
+            if record.temperature is not None:
+                self.temperature = record.temperature
+            if record.signal is not None:
+                self.signal = record.signal
+            # Only the newest record says whether the dongle is asleep now.
+            self.sleeping_until = (
+                record.time + record.next_report_min * 60
+                if record.next_report_min
+                else None
+            )
+            self._trip_record(record, when, events)
+            if record.impact_g is not None:
+                events.append(
+                    DeviceEvent(
+                        EVENT_IMPACT,
+                        when,
+                        record.latitude,
+                        record.longitude,
+                        {"peak_g": record.impact_g},
+                    )
+                )
         self.records += taken
         self.last_batch = BatchInfo(
             received=received,
@@ -217,9 +319,36 @@ class FreematicsDevice:
             update()
         return taken
 
+    def _trip_record(
+        self, record: Record, when: datetime, events: list[DeviceEvent]
+    ) -> None:
+        """Follow trips: their starts and stops, and what they add up to."""
+        if record.kind == "start":
+            self.moving = True
+            self.trip = Trip(start=record.time)
+            self.trip.add(record)
+            events.append(self._event(EVENT_TRIP_STARTED, when, record, {}))
+        elif record.kind == "stop":
+            self.moving = False
+            data: dict[str, Any] = {}
+            if self.trip is not None:
+                self.trip.add(record)
+                self.last_trip = self.trip.summary(record.time)
+                data = asdict(self.last_trip)
+            self.trip = None
+            events.append(self._event(EVENT_TRIP_STOPPED, when, record, data))
+        elif record.kind == "heartbeat":
+            self.moving = False
+        else:
+            self.moving = True
+            if self.trip is not None:
+                self.trip.add(record)
+
     @staticmethod
-    def _trip_event(event_type: str, when: datetime, record: Record) -> TripEvent:
-        return TripEvent(event_type, when, record.latitude, record.longitude)
+    def _event(
+        event_type: str, when: datetime, record: Record, data: dict[str, Any]
+    ) -> DeviceEvent:
+        return DeviceEvent(event_type, when, record.latitude, record.longitude, data)
 
     async def async_save(self) -> None:
         """Write what's new now (the entry is unloading or reloading)."""

@@ -12,7 +12,8 @@ from dataclasses import dataclass
 
 VERSION = 1
 KINDS = ("fix", "start", "stop", "heartbeat")
-POSITION, ALTITUDE, BATTERY = 0x04, 0x08, 0x10
+POSITION, ALTITUDE, BATTERY, EXTRAS = 0x04, 0x08, 0x10, 0x20
+TEMPERATURE, SIGNAL, IMPACT, NEXT_REPORT = 1, 2, 3, 4
 
 
 class CompactError(ValueError):
@@ -31,6 +32,10 @@ class Record:
     hdop: float | None = None
     altitude: int | None = None
     battery_v: float | None = None
+    temperature: int | None = None  # deg C
+    signal: int | None = None  # dBm
+    impact_g: float | None = None  # an impact's peak
+    next_report_min: int | None = None  # going to sleep: the next report within
 
 
 def _varint(data: bytes, pos: int) -> tuple[int, int]:
@@ -56,6 +61,30 @@ def _byte(data: bytes, pos: int) -> tuple[int, int]:
     return data[pos], pos + 1
 
 
+def _extras(data: bytes, pos: int, rec: Record) -> int:
+    count, pos = _byte(data, pos)
+    for _ in range(count):
+        tag, pos = _byte(data, pos)
+        size = (1, 2, 4, 0)[tag >> 6]
+        if not size:
+            size, pos = _byte(data, pos)
+        if pos + size > len(data):
+            raise CompactError("truncated extra")
+        value = data[pos : pos + size]
+        pos += size
+        match tag & 0x3F:
+            case 1 if size == 1:
+                rec.temperature = int.from_bytes(value, "little", signed=True)
+            case 2 if size == 1:
+                rec.signal = int.from_bytes(value, "little", signed=True)
+            case 3 if size == 1:
+                rec.impact_g = value[0] / 10
+            case 4 if size == 2:
+                rec.next_report_min = int.from_bytes(value, "little")
+            # Others are newer than this reader: skipped.
+    return pos
+
+
 def decode(data: bytes) -> tuple[int, list[Record]]:
     """Return the batch's sequence number and its records, oldest first."""
     if len(data) < 7 or data[0] != VERSION:
@@ -68,7 +97,7 @@ def decode(data: bytes) -> tuple[int, list[Record]]:
     while pos < len(data):
         flags = data[pos]
         pos += 1
-        if flags & ~0x1F:
+        if flags & ~0x3F:
             raise CompactError(f"unknown flags {flags:#04x}")
         dt, pos = _varint(data, pos)
         time += dt
@@ -94,6 +123,8 @@ def decode(data: bytes) -> tuple[int, list[Record]]:
         if flags & BATTERY:
             battery, pos = _byte(data, pos)
             rec.battery_v = battery / 10
+        if flags & EXTRAS:
+            pos = _extras(data, pos, rec)
         records.append(rec)
     return sequence, records
 

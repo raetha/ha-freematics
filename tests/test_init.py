@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import base64
-
+from datetime import timedelta
 from typing import Any
 from unittest.mock import patch
 
+import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_capture_events,
+    async_fire_time_changed,
 )
 
 from custom_components.freematics.const import CONF_CLOUDHOOK, DOMAIN
@@ -217,7 +220,15 @@ async def test_entities_have_stable_ids(
         for key in (
             "location",
             "moving",
+            "reporting",
             "trip",
+            "impact",
+            "temperature",
+            "signal",
+            "last_trip_distance",
+            "last_trip_duration",
+            "last_trip_max_speed",
+            "last_trip_average_speed",
             "speed",
             "heading",
             "altitude",
@@ -237,3 +248,115 @@ async def test_accuracy_unknown_without_hdop(
     await hass.async_block_till_done()
     assert hass.states.get("device_tracker.volvo").attributes["gps_accuracy"] == 0
     assert hass.states.get("binary_sensor.volvo_moving").state == "off"
+
+
+async def test_a_trip_is_summed_up_at_its_stop(
+    hass: HomeAssistant, loaded: MockConfigEntry, hass_client_no_auth
+) -> None:
+    await post(hass_client_no_auth, batch(trip()))
+    stop = [
+        {"kind": "fix", "time": T + 40},  # no fix for a moment (a tunnel)
+        {"kind": "fix", "time": T + 70, "lat": 43.8250, "lon": -72.2770, "speed": 90},
+        {"kind": "stop", "time": T + 370, "lat": 43.8250, "lon": -72.2700},
+    ]
+    await post(hass_client_no_auth, batch(stop, sequence=2))
+    await hass.async_block_till_done()
+    event = hass.states.get("event.volvo_trip").attributes
+    assert event["event_type"] == "trip_stopped"
+    # Along the points: 0.15 km, then 0.67 km north, then 0.56 km east
+    assert event["distance_km"] == pytest.approx(1.38, abs=0.02)
+    assert event["duration_min"] == 6.2
+    assert event["max_speed_kmh"] == 90
+    assert event["average_speed_kmh"] == pytest.approx(13.4, abs=0.3)
+    assert (
+        float(hass.states.get("sensor.volvo_last_trip_distance").state)
+        == (event["distance_km"])
+    )
+    assert hass.states.get("sensor.volvo_last_trip_duration").state == "6.2"
+    assert hass.states.get("sensor.volvo_last_trip_top_speed").state == "90"
+    # The last trip is still there after a restart.
+    await hass.config_entries.async_reload(loaded.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.volvo_last_trip_top_speed").state == "90"
+
+
+async def test_a_stop_without_its_start_has_no_summary(
+    hass: HomeAssistant, loaded: MockConfigEntry, hass_client_no_auth
+) -> None:
+    stop = {"kind": "stop", "time": T, "lat": 43.8, "lon": -72.3}
+    await post(hass_client_no_auth, batch([stop]))
+    await hass.async_block_till_done()
+    event = hass.states.get("event.volvo_trip").attributes
+    assert event["event_type"] == "trip_stopped" and "distance_km" not in event
+    assert hass.states.get("sensor.volvo_last_trip_distance").state == "unknown"
+
+
+async def test_a_trip_survives_a_restart(
+    hass: HomeAssistant, loaded: MockConfigEntry, hass_client_no_auth
+) -> None:
+    await post(hass_client_no_auth, batch(trip()))
+    await hass.config_entries.async_reload(loaded.entry_id)
+    await hass.async_block_till_done()
+    stop = {"kind": "stop", "time": T + 70, "lat": 43.8190, "lon": -72.2700}
+    await post(hass_client_no_auth, batch([stop], sequence=2))
+    await hass.async_block_till_done()
+    assert hass.states.get("event.volvo_trip").attributes["duration_min"] == 1.2
+
+
+async def test_extras_and_an_impact(
+    hass: HomeAssistant, loaded: MockConfigEntry, hass_client_no_auth
+) -> None:
+    records = [
+        {
+            "kind": "start",
+            "time": T,
+            "lat": 43.8,
+            "lon": -72.3,
+            "temperature": -7,
+            "signal": -85,
+        },
+        {"kind": "fix", "time": T + 4, "lat": 43.8001, "lon": -72.3, "impact": 6.4},
+    ]
+    await post(hass_client_no_auth, batch(records))
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.volvo_temperature").state == "-7"
+    assert hass.states.get("sensor.volvo_cellular_signal").state == "-85"
+    impact = hass.states.get("event.volvo_impact").attributes
+    assert impact["event_type"] == "impact" and impact["peak_g"] == 6.4
+    assert impact["latitude"] == 43.8001
+    # The impact doesn't fire the trip event, nor the trip the impact event.
+    assert hass.states.get("event.volvo_trip").attributes["event_type"] == (
+        "trip_started"
+    )
+
+
+async def test_reporting_follows_what_the_dongle_said(
+    hass: HomeAssistant, loaded: MockConfigEntry, hass_client_no_auth, freezer
+) -> None:
+    start = dt_util.utc_from_timestamp(T)
+    freezer.move_to(start)
+    assert hass.states.get("binary_sensor.volvo_reporting").state == "unknown"
+    await post(hass_client_no_auth, batch([{"kind": "heartbeat", "time": T - 60}]))
+    await post(hass_client_no_auth, batch([{"kind": "heartbeat", "time": T}], 2))
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.volvo_reporting").state == "on"
+    # Awake, it reports at least every 15 minutes: 45 without one is too long.
+    freezer.move_to(start + timedelta(minutes=46))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.volvo_reporting").state == "off"
+    # Back, then off to sleep for 6 hours: reporting until then and a bit.
+    note = {"kind": "heartbeat", "time": T + 2820, "next_report": 361}
+    await post(hass_client_no_auth, batch([note], sequence=2))
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.volvo_reporting").state == "on"
+    freezer.move_to(start + timedelta(minutes=47 + 361 + 10))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.volvo_reporting").state == "on"
+    freezer.move_to(start + timedelta(minutes=47 + 361 + 16))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert hass.states.get("binary_sensor.volvo_reporting").state == "off"
+    # Unloading cancels the timer.
+    await hass.config_entries.async_unload(loaded.entry_id)

@@ -28,6 +28,9 @@
     "binary_sensor": {
       "moving": {
         "name": "Moving"
+      },
+      "reporting": {
+        "name": "Reporting"
       }
     },
     "event": {
@@ -38,6 +41,16 @@
             "state": {
               "trip_started": "Trip started",
               "trip_stopped": "Trip stopped"
+            }
+          }
+        }
+      },
+      "impact": {
+        "name": "Impact",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "impact": "Impact"
             }
           }
         }
@@ -55,6 +68,24 @@
       },
       "battery_voltage": {
         "name": "Battery voltage"
+      },
+      "temperature": {
+        "name": "Temperature"
+      },
+      "last_trip_distance": {
+        "name": "Last trip distance"
+      },
+      "last_trip_duration": {
+        "name": "Last trip duration"
+      },
+      "last_trip_max_speed": {
+        "name": "Last trip top speed"
+      },
+      "last_trip_average_speed": {
+        "name": "Last trip average speed"
+      },
+      "signal": {
+        "name": "Cellular signal"
       },
       "satellites": {
         "name": "Satellites"

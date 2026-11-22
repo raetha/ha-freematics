@@ -1,4 +1,5 @@
-"""Speed, heading, altitude, battery voltage and the fix's quality."""
+"""Speed, heading, altitude, battery voltage, temperature, the last trip, and
+the fix's and the cellular signal's quality."""
 
 from __future__ import annotations
 
@@ -15,10 +16,13 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import (
     DEGREE,
+    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     EntityCategory,
     UnitOfElectricPotential,
     UnitOfLength,
     UnitOfSpeed,
+    UnitOfTemperature,
+    UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -66,6 +70,54 @@ SENSORS: tuple[FreematicsSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfElectricPotential.VOLT,
         suggested_display_precision=1,
         value=lambda d: d.battery_v,
+    ),
+    FreematicsSensorDescription(
+        key="temperature",
+        translation_key="temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        value=lambda d: d.temperature,
+    ),
+    FreematicsSensorDescription(
+        key="last_trip_distance",
+        translation_key="last_trip_distance",
+        device_class=SensorDeviceClass.DISTANCE,
+        native_unit_of_measurement=UnitOfLength.KILOMETERS,
+        suggested_display_precision=1,
+        value=lambda d: d.last_trip.distance_km if d.last_trip else None,
+    ),
+    FreematicsSensorDescription(
+        key="last_trip_duration",
+        translation_key="last_trip_duration",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        suggested_display_precision=0,
+        value=lambda d: d.last_trip.duration_min if d.last_trip else None,
+    ),
+    FreematicsSensorDescription(
+        key="last_trip_max_speed",
+        translation_key="last_trip_max_speed",
+        device_class=SensorDeviceClass.SPEED,
+        native_unit_of_measurement=UnitOfSpeed.KILOMETERS_PER_HOUR,
+        value=lambda d: d.last_trip.max_speed_kmh if d.last_trip else None,
+    ),
+    FreematicsSensorDescription(
+        key="last_trip_average_speed",
+        translation_key="last_trip_average_speed",
+        device_class=SensorDeviceClass.SPEED,
+        native_unit_of_measurement=UnitOfSpeed.KILOMETERS_PER_HOUR,
+        suggested_display_precision=0,
+        value=lambda d: d.last_trip.average_speed_kmh if d.last_trip else None,
+    ),
+    FreematicsSensorDescription(
+        key="signal",
+        translation_key="signal",
+        device_class=SensorDeviceClass.SIGNAL_STRENGTH,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=lambda d: d.signal,
     ),
     FreematicsSensorDescription(
         key="satellites",
