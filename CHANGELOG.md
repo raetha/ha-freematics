@@ -18,3 +18,7 @@ First release: Freematics ONE+ GPS dongles running ESPHome for Freematics, in Ho
 - The last state survives restarts. Diagnostics are safe to post (the webhook ID is redacted and no coordinates are included) and show the batches and records received, batches missed, repeats, and how late the newest batch arrived; debug logging logs every batch and record.
 
 [Unreleased]: https://github.com/raetha/ha-freematics/commits/dev
+
+### Internal
+
+- The license names the copyright holder as Elias Hunt (raetha).
