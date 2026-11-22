@@ -19,6 +19,10 @@ Not released yet: it's being built and tested.
 
 The address is the dongle's only key: keep it private.
 
+## Troubleshooting
+
+Diagnostics (the device's ⋮ menu → Download diagnostics) are safe to post: they count the batches and records received, those missed or sent twice, and how late the newest one arrived, with the webhook ID redacted and no coordinates. For more, turn on debug logging (Settings → Devices & services → Freematics → ⋮ → Enable debug logging): each batch and every record in it is logged, coordinates included, so check a debug log before posting it.
+
 ## Test builds
 
 Add this repository to Home Assistant's Marketplace (HACS on Home Assistant 2026.10 and older) as a custom repository of type Integration, turn on pre-releases for Freematics (its ⋮ menu, or its **Pre-release** switch), and install the newest test build.

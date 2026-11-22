@@ -26,4 +26,10 @@ async def test_diagnostics(
     data = await async_get_config_entry_diagnostics(hass, loaded)
     assert data["batches"] == 1 and data["records"] == 2 and data["last_sequence"] == 42
     assert data["has_position"] is True
+    assert data["kinds"] == {"start": 1, "fix": 1}
+    assert data["sequence_gaps"] == 0
+    last = data["last_batch"]
+    assert last["sequence"] == 42 and last["records"] == 2 and last["taken"] == 2
+    assert last["size"] > 0 and last["delay_s"] is not None
+    assert data["battery_v"] == 14.1 and data["position_time"] is not None
     assert "latitude" not in str(data)

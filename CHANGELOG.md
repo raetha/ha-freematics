@@ -12,6 +12,6 @@ First release: Freematics ONE+ GPS dongles running ESPHome for Freematics, in Ho
 - A device tracker per dongle, with an accuracy estimated from the fix's HDOP, and speed, heading, altitude, battery voltage, satellites, HDOP and last report sensors.
 - A moving sensor (on from a trip's start to its stop) and a trip event entity (trip started, trip stopped, with the time the dongle recorded it), so late reports still fire.
 - Batches are compact (about 11 bytes a record, sent as base64 text so they pass through Home Assistant Cloud) and answered with an empty 200, keeping the dongle's cellular data low; a batch sent again because its answer was lost is taken once.
-- The last state survives restarts. Diagnostics are safe to post: the webhook ID is redacted and no coordinates are included.
+- The last state survives restarts. Diagnostics are safe to post (the webhook ID is redacted and no coordinates are included) and show the batches and records received, batches missed, repeats, and how late the newest batch arrived; debug logging logs every batch and record.
 
 [Unreleased]: https://github.com/raetha/ha-freematics/commits/dev

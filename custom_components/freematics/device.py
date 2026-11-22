@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -9,9 +11,12 @@ from typing import Any
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
 from .compact import Record
 from .const import DOMAIN, EVENT_TRIP_STARTED, EVENT_TRIP_STOPPED
+
+_LOGGER = logging.getLogger(__name__)
 
 STORAGE_VERSION = 1
 SAVE_DELAY = 30  # seconds: batches arrive every couple of minutes at most
@@ -40,6 +45,18 @@ class TripEvent:
     longitude: float | None
 
 
+@dataclass
+class BatchInfo:
+    """The newest batch, for diagnostics: no coordinates."""
+
+    received: datetime
+    sequence: int
+    size: int  # bytes of base64 text
+    records: int
+    taken: int
+    delay_s: int | None  # from the newest record taken to its arrival
+
+
 class FreematicsDevice:
     """The latest state of one dongle, restored across restarts.
 
@@ -48,7 +65,8 @@ class FreematicsDevice:
     within it become events carrying their own times.
     """
 
-    def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
+    def __init__(self, hass: HomeAssistant, entry_id: str, name: str = "") -> None:
+        self._name = name
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}"
         )
@@ -61,6 +79,9 @@ class FreematicsDevice:
         self.records = 0
         self.repeats = 0
         self.last_sequence: int | None = None
+        self.sequence_gaps = 0
+        self.kinds: Counter[str] = Counter()
+        self.last_batch: BatchInfo | None = None
         self._unsaved = False
         self._update_listeners: set[CALLBACK_TYPE] = set()
         self._event_listeners: set[Callable[[TripEvent], None]] = set()
@@ -109,20 +130,50 @@ class FreematicsDevice:
         return lambda: self._event_listeners.discard(listener)
 
     @callback
-    def async_apply(self, sequence: int, records: list[Record]) -> int:
+    def async_apply(self, sequence: int, records: list[Record], size: int = 0) -> int:
         """Take a batch; returns how many of its records were new."""
+        received = dt_util.utcnow()
         self.batches += 1
+        if (
+            self.last_sequence is not None
+            and sequence != (self.last_sequence + 1) & 0xFFFF
+        ):
+            # A post that never arrived, or the dongle restarted (which picks
+            # a new random sequence).
+            self.sequence_gaps += 1
+            _LOGGER.debug(
+                "%s: batch %d after %d: a batch went missing or the dongle restarted",
+                self._name,
+                sequence,
+                self.last_sequence,
+            )
         self.last_sequence = sequence
+        _LOGGER.debug(
+            "%s: batch %d, %d records in %d bytes",
+            self._name,
+            sequence,
+            len(records),
+            size,
+        )
         events: list[TripEvent] = []
         taken = 0
         for record in records:
             if record.time <= self.last_time:
                 # Sent again because the dongle missed our answer.
                 self.repeats += 1
+                _LOGGER.debug("%s: repeat of %s, skipped", self._name, record)
                 continue
             taken += 1
+            self.kinds[record.kind] += 1
             self.last_time = record.time
             when = datetime.fromtimestamp(record.time, UTC)
+            _LOGGER.debug(
+                "%s: %s, %d s old: %s",
+                self._name,
+                when.isoformat(),
+                int((received - when).total_seconds()),
+                record,
+            )
             if record.latitude is not None and record.longitude is not None:
                 self.position = Position(
                     latitude=record.latitude,
@@ -147,6 +198,14 @@ class FreematicsDevice:
             else:
                 self.moving = True
         self.records += taken
+        self.last_batch = BatchInfo(
+            received=received,
+            sequence=sequence,
+            size=size,
+            records=len(records),
+            taken=taken,
+            delay_s=(int(received.timestamp() - self.last_time) if taken else None),
+        )
         if not taken:
             return 0
         self._unsaved = True

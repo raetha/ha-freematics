@@ -21,8 +21,26 @@ async def async_get_config_entry_diagnostics(
         "batches": device.batches,
         "records": device.records,
         "repeats": device.repeats,
+        "kinds": dict(device.kinds),
         "last_sequence": device.last_sequence,
+        "sequence_gaps": device.sequence_gaps,
+        "last_batch": (
+            {
+                "received": batch.received.isoformat(),
+                "sequence": batch.sequence,
+                "size": batch.size,
+                "records": batch.records,
+                "taken": batch.taken,
+                "delay_s": batch.delay_s,
+            }
+            if (batch := device.last_batch)
+            else None
+        ),
         "last_report": device.last_report.isoformat() if device.last_report else None,
         "moving": device.moving,
         "has_position": device.position is not None,
+        "position_time": (
+            device.position_time.isoformat() if device.position_time else None
+        ),
+        "battery_v": device.battery_v,
     }

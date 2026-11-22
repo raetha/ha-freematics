@@ -126,6 +126,27 @@ async def test_a_batch_sent_again_is_taken_once(
     assert loaded.runtime_data.records == 2
 
 
+async def test_missing_batches_are_counted(
+    hass: HomeAssistant, loaded: MockConfigEntry, hass_client_no_auth, caplog
+) -> None:
+    caplog.set_level("DEBUG", "custom_components.freematics")
+    first, second = trip()
+    await post(hass_client_no_auth, batch([first], sequence=0xFFFF))
+    # The sequence wraps: no gap.
+    await post(hass_client_no_auth, batch([second], sequence=0))
+    assert loaded.runtime_data.sequence_gaps == 0
+    third = {**second, "time": T + 20}
+    await post(hass_client_no_auth, batch([third], sequence=5))
+    assert loaded.runtime_data.sequence_gaps == 1
+    assert "batch 5 after 0" in caplog.text
+    assert "batch 0, 1 records" in caplog.text
+    # A repeat taken nothing: the last batch says so.
+    await post(hass_client_no_auth, batch([third], sequence=6))
+    assert "repeat of" in caplog.text
+    last = loaded.runtime_data.last_batch
+    assert last is not None and last.taken == 0 and last.delay_s is None
+
+
 async def test_rejects_what_isnt_a_batch(
     hass: HomeAssistant, loaded: MockConfigEntry, hass_client_no_auth, caplog
 ) -> None:

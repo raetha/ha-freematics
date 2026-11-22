@@ -29,7 +29,7 @@ type FreematicsConfigEntry = ConfigEntry[FreematicsDevice]
 
 async def async_setup_entry(hass: HomeAssistant, entry: FreematicsConfigEntry) -> bool:
     """Set up a dongle: restore its state and listen on its webhook."""
-    device = FreematicsDevice(hass, entry.entry_id)
+    device = FreematicsDevice(hass, entry.entry_id, entry.title)
     await device.async_load()
     entry.runtime_data = device
 
@@ -44,7 +44,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: FreematicsConfigEntry) -
         except CompactError as err:
             _LOGGER.warning("%s sent a batch that can't be read: %s", entry.title, err)
             return web.Response(status=400)
-        device.async_apply(sequence, records)
+        device.async_apply(sequence, records, len(body))
         # An empty answer: it's what the dongle pays for over the air.
         return web.Response(status=200)
 
