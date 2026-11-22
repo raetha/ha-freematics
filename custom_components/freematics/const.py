@@ -9,7 +9,7 @@ DOMAIN: Final = "freematics"
 CONF_WEBHOOK_ID: Final = "webhook_id"
 CONF_CLOUDHOOK: Final = "cloudhook"
 
-# The largest batch a dongle sends is about 1 KB; anything far bigger isn't one.
+# A dongle's largest batch is about 1.4 KB as base64; anything far bigger isn't one.
 MAX_BODY: Final = 8192
 
 # HDOP times the error of one satellite range (about 5 m for a consumer

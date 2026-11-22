@@ -1,4 +1,4 @@
-"""The compact batches the dongles post to the webhook.
+"""The compact batches the dongles post to the webhook, as base64 text.
 
 The encoder is components/tracker_uplink/compact.h in raetha/esphome-freematics,
 whose tests carry a copy of this decoder: keep the two the same.
@@ -6,6 +6,8 @@ whose tests carry a copy of this decoder: keep the two the same.
 
 from __future__ import annotations
 
+import base64
+import binascii
 from dataclasses import dataclass
 
 VERSION = 1
@@ -94,3 +96,13 @@ def decode(data: bytes) -> tuple[int, list[Record]]:
             rec.battery_v = battery / 10
         records.append(rec)
     return sequence, records
+
+
+def decode_body(body: bytes) -> tuple[int, list[Record]]:
+    """A webhook body: a batch as base64 text (Home Assistant Cloud relays bodies
+    as UTF-8 text, which binary wouldn't survive)."""
+    try:
+        data = base64.b64decode(body, validate=True)
+    except (binascii.Error, ValueError) as err:
+        raise CompactError("not base64") from err
+    return decode(data)

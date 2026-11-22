@@ -19,6 +19,7 @@ Freematics: a Home Assistant custom integration (Marketplace/HACS, Python 3.14) 
 ## Hard-won facts
 
 - Home Assistant keeps no states with past timestamps: each batch moves the device to its newest record; trip starts and stops become events carrying their recorded time. Records no newer than the last one taken are repeats (the dongle missed an answer) and are dropped.
+- Home Assistant Cloud relays a cloudhook's body as a UTF-8 string (`body.encode("utf-8")` in the cloud client), so binary arrives mangled: batches travel as base64 text.
 - The webhook ID is the dongle's only key: never log it, and diagnostics redact it and carry no coordinates.
 - Importing `homeassistant.components.cloud` pulls in much of Home Assistant (and fails in the test environment): `config_flow.py` imports it only when it's loaded, and the tests fake it (`cloud` fixture).
 - From 2026.10 Home Assistant validates schemas with probatio; voluptuous schemas still work at run time, only their static type differs (`_form` in `config_flow.py`).

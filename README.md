@@ -7,7 +7,7 @@ A Home Assistant integration for Freematics ONE+ GPS dongles running [ESPHome fo
 - a moving sensor, on from a trip's start to its stop;
 - a trip event entity (trip started, trip stopped) to automate on.
 
-No Traccar server is needed, and it uses little cellular data: a record is about 11 bytes, sent in batches every 2 minutes and at once when a trip starts or stops. Home Assistant can't store back-dated positions, so records sent late (after a coverage gap) update the device to the newest one without a track history; for drive history and replay, run Traccar as well (the dongle can report to both).
+No Traccar server is needed, and it uses little cellular data: a record is about 11 bytes (15 as the base64 text that goes over the air), sent in batches every 2 minutes and at once when a trip starts or stops. Home Assistant can't store back-dated positions, so records sent late (after a coverage gap) update the device to the newest one without a track history; for drive history and replay, run Traccar as well (the dongle can report to both).
 
 Not released yet: it's being built and tested.
 

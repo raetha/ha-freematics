@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+
 from typing import Any
 from unittest.mock import patch
 
@@ -22,8 +24,10 @@ URL = f"/api/webhook/{WEBHOOK_ID}"
 T = 1_763_700_000
 
 
-async def post(hass_client_no_auth, body: bytes) -> int:
+async def post(hass_client_no_auth, batch_bytes: bytes, raw: bool = False) -> int:
+    """Post a batch as the dongle does: base64 text (raw: the body as given)."""
     client = await hass_client_no_auth()
+    body = batch_bytes if raw else base64.b64encode(batch_bytes)
     response = await client.post(URL, data=body)
     return response.status
 
@@ -125,9 +129,11 @@ async def test_a_batch_sent_again_is_taken_once(
 async def test_rejects_what_isnt_a_batch(
     hass: HomeAssistant, loaded: MockConfigEntry, hass_client_no_auth, caplog
 ) -> None:
-    assert await post(hass_client_no_auth, b"hello") == 400
+    assert await post(hass_client_no_auth, b"hello!", raw=True) == 400
     assert "Volvo sent a batch that can't be read" in caplog.text
-    assert await post(hass_client_no_auth, bytes(9000)) == 413
+    # Binary isn't accepted: Home Assistant Cloud would have mangled it.
+    assert await post(hass_client_no_auth, batch(trip()), raw=True) == 400
+    assert await post(hass_client_no_auth, bytes(9000), raw=True) == 413
 
 
 async def test_state_survives_a_restart(

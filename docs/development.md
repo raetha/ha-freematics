@@ -10,7 +10,7 @@
 
 ## How a batch flows
 
-The dongle posts `application/octet-stream` to `/api/webhook/<id>` (or Home Assistant Cloud's cloudhook address for it). `__init__.py` reads at most 8 KB, decodes it (`compact.py`, documented at the top of that file and of the encoder, `components/tracker_uplink/compact.h` in esphome-freematics), hands the records to the dongle's `FreematicsDevice`, and answers an empty 200, which the dongle takes as the batch's acknowledgement (400 for a batch it can't read, so the dongle's log shows something's wrong). The device takes records newer than the last it took, in order, updates its state, fires trip events, tells its entities to write their states once, and saves its state 30 seconds later (at once on unload).
+The dongle posts the batch as base64 text (`text/plain`) to `/api/webhook/<id>` or Home Assistant Cloud's cloudhook address for it: the cloud relays a body as a UTF-8 string, which binary wouldn't survive. `__init__.py` reads at most 8 KB, decodes it (`compact.py`, `decode_body`, documented at the top of that file and of the encoder, `components/tracker_uplink/compact.h` in esphome-freematics), hands the records to the dongle's `FreematicsDevice`, and answers an empty 200, which the dongle takes as the batch's acknowledgement (400 for a batch it can't read, so the dongle's log shows something's wrong). The device takes records newer than the last it took, in order, updates its state, fires trip events, tells its entities to write their states once, and saves its state 30 seconds later (at once on unload).
 
 ## Branches and releases
 

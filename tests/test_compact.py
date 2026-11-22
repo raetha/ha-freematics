@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from custom_components.freematics.compact import CompactError, decode
+import base64
+
+from custom_components.freematics.compact import CompactError, decode, decode_body
 
 from .encode import batch
 
@@ -80,3 +82,12 @@ def test_an_empty_batch_is_valid():
 def test_rejects_what_isnt_a_batch(body):
     with pytest.raises(CompactError):
         decode(body)
+
+
+def test_bodies_are_base64():
+    body = batch([{"kind": "heartbeat", "time": 5, "battery": 12.5}], sequence=3)
+    assert decode_body(base64.b64encode(body)) == decode(body)
+    with pytest.raises(CompactError):
+        decode_body(b"not base64!")
+    with pytest.raises(CompactError):
+        decode_body(body)  # raw binary

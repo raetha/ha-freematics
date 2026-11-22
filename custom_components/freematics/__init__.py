@@ -11,7 +11,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_entry_flow
 
-from .compact import CompactError, decode
+from .compact import CompactError, decode_body
 from .const import CONF_WEBHOOK_ID, DOMAIN, MAX_BODY
 from .device import FreematicsDevice
 
@@ -40,7 +40,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: FreematicsConfigEntry) -
         if len(body) > MAX_BODY:
             return web.Response(status=413)
         try:
-            sequence, records = decode(body)
+            sequence, records = decode_body(body)
         except CompactError as err:
             _LOGGER.warning("%s sent a batch that can't be read: %s", entry.title, err)
             return web.Response(status=400)
