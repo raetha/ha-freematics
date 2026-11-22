@@ -1,4 +1,4 @@
-"""An encoder for test batches, mirroring components/traccar_uplink/compact.h in
+"""An encoder for test batches, mirroring components/tracker_uplink/compact.h in
 raetha/esphome-freematics (whose tests check the real encoder against
 custom_components/freematics/compact.py's decoder)."""
 

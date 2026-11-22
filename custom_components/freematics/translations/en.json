@@ -17,11 +17,11 @@
       }
     },
     "create_entry": {
-      "default": "Put this address in the dongle's ESPHome config, in ESPHome Device Builder's Secrets as `ha_webhook_url`:\n\n`{webhook_url}`\n\nKeep it private: it's the dongle's only key. You can show it again with Reconfigure."
+      "default": "Put this address in ESPHome Device Builder's Secrets under a name of its own (such as `car1_webhook_url`), and set the dongle's `ha_webhook_url` to that secret:\n\n`{webhook_url}`\n\nKeep it private: it's the dongle's only key. You can show it again with Reconfigure."
     },
     "abort": {
       "no_https_url": "The dongle needs an HTTPS address it can reach from the internet: subscribe to Home Assistant Cloud, or set an external HTTPS URL under Settings → System → Network.",
-      "webhook_url": "This dongle's webhook address, for the `ha_webhook_url` secret in ESPHome Device Builder:\n\n`{webhook_url}`"
+      "webhook_url": "This dongle's webhook address, for the secret its `ha_webhook_url` names in ESPHome Device Builder:\n\n`{webhook_url}`"
     }
   },
   "entity": {

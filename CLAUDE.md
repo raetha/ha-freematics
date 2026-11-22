@@ -9,7 +9,7 @@ Freematics: a Home Assistant custom integration (Marketplace/HACS, Python 3.14) 
 - **`dev` holds the expected next version** in `manifest.json`: with the first change after a release, set it to what that change calls for under semver and say why in a line. Never date the changelog or open the release pull request unless the owner asks (`scripts/bump_version.sh X.Y.Z`, then `dev` → `main`). `DRAFT` blocks the first release until the owner says it's ready.
 - Each push to `dev` that changes what ships publishes a test build (`<version>-dev.<n>` pre-release) that the owner installs through the Marketplace's pre-release option.
 - **Cellular data is the dongles' scarcest resource** (pay-as-you-go SIMs): anything that makes the dongle send more, or makes Home Assistant answer with more, needs a reason. The webhook answers with an empty 200.
-- **The wire format is a contract with the dongle's encoder** (`components/traccar_uplink/compact.h` in esphome-freematics, tested there against a copy of `compact.py`): change both together, and keep old dongles working (the version byte).
+- **The wire format is a contract with the dongle's encoder** (`components/tracker_uplink/compact.h` in esphome-freematics, tested there against a copy of `compact.py`): change both together, and keep old dongles working (the version byte).
 - Push back when a change looks like a lot of complexity for little gain.
 
 ## Validate

@@ -1,6 +1,6 @@
 """The compact batches the dongles post to the webhook.
 
-The encoder is components/traccar_uplink/compact.h in raetha/esphome-freematics,
+The encoder is components/tracker_uplink/compact.h in raetha/esphome-freematics,
 whose tests carry a copy of this decoder: keep the two the same.
 """
 

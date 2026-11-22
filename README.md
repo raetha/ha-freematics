@@ -15,7 +15,7 @@ Not released yet: it's being built and tested.
 
 1. Install the integration (below) and restart Home Assistant.
 2. Settings → Devices & services → Add integration → Freematics, and name the dongle after its car. Home Assistant makes a webhook for it and shows its address: Home Assistant Cloud's when you subscribe, otherwise your Home Assistant's external HTTPS address (Settings → System → Network). The dongle reaches it from the internet, so nothing else at home needs opening. Reconfigure shows the address again.
-3. In ESPHome Device Builder, add the address to Secrets as `ha_webhook_url`, and install the dongle with [`examples/car-ha-integration.yaml`](https://github.com/raetha/esphome-freematics/blob/dev/examples/car-ha-integration.yaml) (or add `packages/uplink-ha-webhook.yaml` to the Traccar example to report to both).
+3. In ESPHome Device Builder, add the address to Secrets under a name of its own for each dongle (such as `volvo_webhook_url`), set the device config's `ha_webhook_url: !secret volvo_webhook_url`, and install the dongle with [`examples/car-ha-integration.yaml`](https://github.com/raetha/esphome-freematics/blob/dev/examples/car-ha-integration.yaml) (or add `packages/uplink-ha-webhook.yaml` to the Traccar example to report to both).
 
 The address is the dongle's only key: keep it private.
 
