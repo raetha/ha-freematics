@@ -95,6 +95,9 @@
       },
       "last_report": {
         "name": "Last report"
+      },
+      "next_report": {
+        "name": "Next report due"
       }
     }
   }

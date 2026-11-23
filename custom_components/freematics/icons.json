@@ -54,6 +54,9 @@
       },
       "last_trip_average_speed": {
         "default": "mdi:speedometer-medium"
+      },
+      "next_report": {
+        "default": "mdi:clock-alert-outline"
       }
     }
   }

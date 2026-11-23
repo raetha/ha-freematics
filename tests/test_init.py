@@ -10,6 +10,7 @@ from unittest.mock import patch
 import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import Event, HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
@@ -236,6 +237,7 @@ async def test_entities_have_stable_ids(
             "satellites",
             "hdop",
             "last_report",
+            "next_report",
         )
     }
 
@@ -330,36 +332,98 @@ async def test_extras_and_an_impact(
     )
 
 
-async def test_reporting_follows_what_the_dongle_said(
-    hass: HomeAssistant, loaded: MockConfigEntry, hass_client_no_auth, freezer
+async def test_next_report_due_follows_what_the_dongle_said(
+    hass: HomeAssistant, loaded: MockConfigEntry, hass_client_no_auth
 ) -> None:
-    start = dt_util.utc_from_timestamp(T)
-    freezer.move_to(start)
-    assert hass.states.get("binary_sensor.volvo_reporting").state == "unknown"
-    await post(hass_client_no_auth, batch([{"kind": "heartbeat", "time": T - 60}]))
-    await post(hass_client_no_auth, batch([{"kind": "heartbeat", "time": T}], 2))
+    def due() -> str:
+        return hass.states.get("sensor.volvo_next_report_due").state
+
+    assert due() == "unknown"
+    await post(hass_client_no_auth, batch([{"kind": "heartbeat", "time": T}]))
     await hass.async_block_till_done()
-    assert hass.states.get("binary_sensor.volvo_reporting").state == "on"
-    # Awake, it reports at least every 15 minutes: 45 without one is too long.
-    freezer.move_to(start + timedelta(minutes=46))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
-    assert hass.states.get("binary_sensor.volvo_reporting").state == "off"
-    # Back, then off to sleep for 6 hours: reporting until then and a bit.
-    note = {"kind": "heartbeat", "time": T + 2820, "next_report": 361}
+    # Awake, it reports at least every 15 minutes: 45 without one is overdue.
+    assert due() == dt_util.utc_from_timestamp(T + 45 * 60).isoformat()
+    # Off to sleep for 6 hours: due then, and a bit.
+    note = {"kind": "heartbeat", "time": T + 60, "next_report": 361}
     await post(hass_client_no_auth, batch([note], sequence=2))
     await hass.async_block_till_done()
-    assert hass.states.get("binary_sensor.volvo_reporting").state == "on"
-    freezer.move_to(start + timedelta(minutes=47 + 361 + 10))
+    assert due() == dt_util.utc_from_timestamp(T + 60 + (361 + 15) * 60).isoformat()
+
+
+async def test_reporting_is_on_while_a_trip_streams(
+    hass: HomeAssistant, loaded: MockConfigEntry, hass_client_no_auth, freezer
+) -> None:
+    def reporting() -> str:
+        return hass.states.get("binary_sensor.volvo_reporting").state
+
+    start = dt_util.utcnow()
+    assert reporting() == "off"
+    # Parked heartbeats aren't a trip streaming.
+    await post(hass_client_no_auth, batch([{"kind": "heartbeat", "time": T}]))
+    await hass.async_block_till_done()
+    assert reporting() == "off"
+    await post(hass_client_no_auth, batch(trip(), sequence=2))
+    await hass.async_block_till_done()
+    assert reporting() == "on"
+    # Batches every 2 minutes keep it on; 5 minutes without one turn it off.
+    freezer.move_to(start + timedelta(minutes=4))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
-    assert hass.states.get("binary_sensor.volvo_reporting").state == "on"
-    freezer.move_to(start + timedelta(minutes=47 + 361 + 16))
+    assert reporting() == "on"
+    freezer.move_to(start + timedelta(minutes=6))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
-    assert hass.states.get("binary_sensor.volvo_reporting").state == "off"
+    assert reporting() == "off"
+    # Back in coverage, then the stop: off.
+    fix = {"kind": "fix", "time": T + 400, "lat": 43.82, "lon": -72.27, "speed": 50}
+    await post(hass_client_no_auth, batch([fix], sequence=3))
+    await hass.async_block_till_done()
+    assert reporting() == "on"
+    stop = {"kind": "stop", "time": T + 500, "lat": 43.83, "lon": -72.27}
+    await post(hass_client_no_auth, batch([stop], sequence=4))
+    await hass.async_block_till_done()
+    assert reporting() == "off"
     # Unloading cancels the timer.
+    await post(
+        hass_client_no_auth,
+        batch([{**r, "time": r["time"] + 1000} for r in trip()], sequence=5),
+    )
+    await hass.async_block_till_done()
     await hass.config_entries.async_unload(loaded.entry_id)
+
+
+async def test_the_dongle_names_its_model_and_firmware(
+    hass: HomeAssistant,
+    loaded: MockConfigEntry,
+    hass_client_no_auth,
+    device_registry: dr.DeviceRegistry,
+) -> None:
+    device = device_registry.async_get_device_by_identifier(
+        (DOMAIN, loaded.entry_id), loaded.entry_id
+    )
+    assert device.model == "ONE+" and device.sw_version is None
+    hello = {
+        "kind": "heartbeat",
+        "time": T,
+        "model": "ONE+ Model B",
+        "firmware": "0.1.0+ff6a429",
+    }
+    await post(hass_client_no_auth, batch([hello]))
+    await hass.async_block_till_done()
+    device = device_registry.async_get_device_by_identifier(
+        (DOMAIN, loaded.entry_id), loaded.entry_id
+    )
+    assert (device.model, device.sw_version) == ("ONE+ Model B", "0.1.0+ff6a429")
+    # Kept across restarts, and set at setup.
+    await hass.config_entries.async_reload(loaded.entry_id)
+    await hass.async_block_till_done()
+    device = device_registry.async_get_device_by_identifier(
+        (DOMAIN, loaded.entry_id), loaded.entry_id
+    )
+    assert (device.model, device.sw_version) == ("ONE+ Model B", "0.1.0+ff6a429")
+    # The same again changes nothing.
+    await post(hass_client_no_auth, batch([{**hello, "time": T + 60}], sequence=2))
+    await hass.async_block_till_done()
 
 
 async def test_a_heartbeat_ends_a_trip_whose_stop_never_came(

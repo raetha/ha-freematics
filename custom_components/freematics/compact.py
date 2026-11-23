@@ -13,7 +13,7 @@ from dataclasses import dataclass
 VERSION = 1
 KINDS = ("fix", "start", "stop", "heartbeat")
 POSITION, ALTITUDE, BATTERY, EXTRAS = 0x04, 0x08, 0x10, 0x20
-TEMPERATURE, SIGNAL, IMPACT, NEXT_REPORT = 1, 2, 3, 4
+TEMPERATURE, SIGNAL, IMPACT, NEXT_REPORT, MODEL, FIRMWARE = 1, 2, 3, 4, 5, 6
 
 
 class CompactError(ValueError):
@@ -36,6 +36,8 @@ class Record:
     signal: int | None = None  # dBm
     impact_g: float | None = None  # an impact's peak
     next_report_min: int | None = None  # going to sleep: the next report within
+    model: str | None = None  # the device's, once per boot
+    firmware: str | None = None  # its firmware version, once per boot
 
 
 def _varint(data: bytes, pos: int) -> tuple[int, int]:
@@ -81,6 +83,10 @@ def _extras(data: bytes, pos: int, rec: Record) -> int:
                 rec.impact_g = value[0] / 10
             case 4 if size == 2:
                 rec.next_report_min = int.from_bytes(value, "little")
+            case 5:
+                rec.model = value.decode("utf-8", "replace")
+            case 6:
+                rec.firmware = value.decode("utf-8", "replace")
             # Others are newer than this reader: skipped.
     return pos
 

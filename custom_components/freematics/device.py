@@ -7,20 +7,23 @@ import math
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .compact import Record
 from .const import (
     AWAKE_SILENCE,
+    DEFAULT_MODEL,
     DOMAIN,
     EVENT_IMPACT,
     EVENT_TRIP_STARTED,
     EVENT_TRIP_STOPPED,
+    LIVE_WINDOW,
     SLEEP_GRACE,
 )
 
@@ -130,6 +133,8 @@ class FreematicsDevice:
 
     def __init__(self, hass: HomeAssistant, entry_id: str, name: str = "") -> None:
         self._name = name
+        self._hass = hass
+        self._entry_id = entry_id
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}"
         )
@@ -142,6 +147,9 @@ class FreematicsDevice:
         self.signal: int | None = None
         # The dongle said, before sleeping, it reports again by then (Unix time)
         self.sleeping_until: int | None = None
+        # What the dongle says it is, once per boot
+        self.model: str | None = None
+        self.firmware: str | None = None
         self.trip: Trip | None = None
         self.last_trip: TripSummary | None = None
         self.batches = 0
@@ -159,6 +167,15 @@ class FreematicsDevice:
     def last_report(self) -> datetime | None:
         """When the dongle recorded its newest record."""
         return datetime.fromtimestamp(self.last_time, UTC) if self.last_time else None
+
+    @property
+    def live_until(self) -> datetime | None:
+        """While on a trip, when the dongle stops counting as reporting live
+        unless another batch arrives (None: not on a trip, or no batch since
+        Home Assistant started)."""
+        if not self.moving or self.last_batch is None:
+            return None
+        return self.last_batch.received + timedelta(seconds=LIVE_WINDOW)
 
     @property
     def report_due(self) -> datetime | None:
@@ -186,6 +203,8 @@ class FreematicsDevice:
         self.temperature = data.get("temperature")
         self.signal = data.get("signal")
         self.sleeping_until = data.get("sleeping_until")
+        self.model = data.get("model")
+        self.firmware = data.get("firmware")
         if (trip := data.get("trip")) is not None:
             self.trip = Trip(**trip)
         if (last_trip := data.get("last_trip")) is not None:
@@ -203,6 +222,8 @@ class FreematicsDevice:
             "temperature": self.temperature,
             "signal": self.signal,
             "sleeping_until": self.sleeping_until,
+            "model": self.model,
+            "firmware": self.firmware,
             "trip": asdict(self.trip) if self.trip else None,
             "last_trip": asdict(self.last_trip) if self.last_trip else None,
         }
@@ -249,6 +270,7 @@ class FreematicsDevice:
             size,
         )
         events: list[DeviceEvent] = []
+        identity_changed = False
         taken = 0
         for record in records:
             if record.time <= self.last_time:
@@ -284,6 +306,12 @@ class FreematicsDevice:
                 self.temperature = record.temperature
             if record.signal is not None:
                 self.signal = record.signal
+            if record.model is not None and record.model != self.model:
+                self.model = record.model
+                identity_changed = True
+            if record.firmware is not None and record.firmware != self.firmware:
+                self.firmware = record.firmware
+                identity_changed = True
             # Only the newest record says whether the dongle is asleep now.
             self.sleeping_until = (
                 record.time + record.next_report_min * 60
@@ -314,6 +342,8 @@ class FreematicsDevice:
             return 0
         self._unsaved = True
         self._store.async_delay_save(self._data_to_save, SAVE_DELAY)
+        if identity_changed:
+            self._update_device_registry()
         for event in events:
             for event_listener in list(self._event_listeners):
                 event_listener(event)
@@ -348,6 +378,18 @@ class FreematicsDevice:
             self.moving = True
             if self.trip is not None:
                 self.trip.add(record)
+
+    def _update_device_registry(self) -> None:
+        """Show the model and firmware the dongle reported on its device."""
+        registry = dr.async_get(self._hass)
+        if device := registry.async_get_device_by_identifier(
+            (DOMAIN, self._entry_id), self._entry_id
+        ):
+            registry.async_update_device(
+                device.id,
+                model=self.model or DEFAULT_MODEL,
+                sw_version=self.firmware,
+            )
 
     def _end_trip_without_stop(self, events: list[DeviceEvent]) -> None:
         """End a trip whose stop never came, at its last record.

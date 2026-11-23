@@ -8,7 +8,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
 from . import FreematicsConfigEntry
-from .const import DOMAIN
+from .const import DEFAULT_MODEL, DOMAIN
 from .device import FreematicsDevice
 
 
@@ -25,7 +25,8 @@ class FreematicsEntity(Entity):
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Freematics",
-            model="ONE+ (ESPHome)",
+            model=self.device.model or DEFAULT_MODEL,
+            sw_version=self.device.firmware,
         )
 
     @override

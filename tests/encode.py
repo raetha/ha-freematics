@@ -23,7 +23,8 @@ def _zigzag(value: int) -> int:
 def batch(records: list[dict], sequence: int = 1) -> bytes:
     """Encode records: dicts with kind, time and optionally lat, lon, speed,
     course, sats, hdop (x10), alt, battery (volts), and the extras temperature
-    (deg C), signal (dBm), impact (g), next_report (minutes)."""
+    (deg C), signal (dBm), impact (g), next_report (minutes), model and
+    firmware (text)."""
     base = records[0]["time"] if records else 0
     out = bytearray([1]) + sequence.to_bytes(2, "little") + base.to_bytes(4, "little")
     time, lat, lon, alt = base, 0, 0, 0
@@ -67,6 +68,11 @@ def batch(records: list[dict], sequence: int = 1) -> bytes:
         if "next_report" in r:
             extras += bytes([0x44]) + r["next_report"].to_bytes(2, "little")
             count += 1
+        for tag, key in ((0xC5, "model"), (0xC6, "firmware")):
+            if key in r:
+                text = r[key].encode()
+                extras += bytes([tag, len(text)]) + text
+                count += 1
         if count:
             flags |= 0x20
             body += bytes([count]) + extras

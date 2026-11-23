@@ -25,3 +25,7 @@ EVENT_IMPACT: Final = "impact"
 # sleeps it says when it reports next; it gets this much longer than that.
 AWAKE_SILENCE: Final = 45 * 60  # seconds
 SLEEP_GRACE: Final = 15 * 60  # seconds
+# On a trip the dongle posts a batch every 2 minutes (send_interval); while
+# batches keep coming within this, it's reporting live.
+LIVE_WINDOW: Final = 5 * 60  # seconds
+DEFAULT_MODEL: Final = "ONE+"  # until the dongle says which

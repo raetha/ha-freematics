@@ -141,6 +141,13 @@ SENSORS: tuple[FreematicsSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value=lambda d: d.last_report,
     ),
+    FreematicsSensorDescription(
+        key="next_report",
+        translation_key="next_report",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value=lambda d: d.report_due,
+    ),
 )
 
 

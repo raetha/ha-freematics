@@ -38,6 +38,8 @@ async def async_get_config_entry_diagnostics(
             else None
         ),
         "last_report": device.last_report.isoformat() if device.last_report else None,
+        "model": device.model,
+        "firmware": device.firmware,
         "moving": device.moving,
         "has_position": device.position is not None,
         "position_time": (

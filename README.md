@@ -4,7 +4,8 @@ A Home Assistant integration for Freematics ONE+ GPS dongles running [ESPHome fo
 
 - a device tracker, with an accuracy estimated from the satellite fix;
 - speed, heading, altitude, battery voltage and temperature sensors, and satellites, HDOP, cellular signal and last report as diagnostics;
-- a moving sensor, on from a trip's start to its stop, and a reporting sensor, off when the dongle has gone quiet for longer than it should (it says before sleeping when it will report next);
+- a moving sensor, on from a trip's start to its stop; a reporting sensor, on while a trip's batches keep arriving (off when parked, and when a trip's reports stop: out of coverage or unplugged); and a next-report-due time: the dongle is overdue once it has passed with no newer last report (awake, it reports at least every 15 minutes; before sleeping it says when it will report next), for an automation that warns of a dongle gone quiet;
+- the dongle's model and firmware version on its device, as the dongle reports them once per boot;
 - a trip event entity (trip started, trip stopped) to automate on, the stop carrying the trip's distance, duration, top and average speed, which also show as last-trip sensors (a trip whose stop never arrives, because the dongle restarted on the way, ends at its last point with `stop_missed: true`);
 - an impact event entity, fired when the dongle's motion sensor measures a jolt beyond its threshold (4 g by default), with the peak and where it happened: an automation can tell the family or call for help.
 

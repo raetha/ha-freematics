@@ -42,10 +42,11 @@ class FreematicsMoving(FreematicsEntity, BinarySensorEntity):
 
 
 class FreematicsReporting(FreematicsEntity, BinarySensorEntity):
-    """On while the dongle reports when it should: off once it has been silent
-    longer than an awake dongle ever is, or past the time it said, before
-    sleeping, it would report again. Off means out of coverage, unplugged or
-    broken; costs the dongle nothing."""
+    """On while the dongle streams a trip: on a trip, with a batch arriving at
+    least every few minutes. Off when parked or asleep, and when a trip's
+    batches stop coming (out of coverage, unplugged). Whether a quiet dongle is
+    late is the Next report due sensor's: overdue once that time has passed
+    with no newer Last report. Costs the dongle nothing."""
 
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -54,10 +55,10 @@ class FreematicsReporting(FreematicsEntity, BinarySensorEntity):
 
     @property
     @override
-    def is_on(self) -> bool | None:
-        """Whether the dongle is reporting as it should."""
-        due = self.device.report_due
-        return None if due is None else dt_util.utcnow() < due
+    def is_on(self) -> bool:
+        """Whether the dongle is reporting a trip live."""
+        until = self.device.live_until
+        return until is not None and dt_util.utcnow() < until
 
     @override
     async def async_added_to_hass(self) -> None:
@@ -76,13 +77,13 @@ class FreematicsReporting(FreematicsEntity, BinarySensorEntity):
     @callback
     def _schedule(self) -> None:
         self._cancel()
-        due = self.device.report_due
-        if due is not None and due > dt_util.utcnow():
+        until = self.device.live_until
+        if until is not None and until > dt_util.utcnow():
             self._unsub_timer = async_track_point_in_utc_time(
-                self.hass, self._overdue, due
+                self.hass, self._quiet, until
             )
 
     @callback
-    def _overdue(self, now: datetime) -> None:
+    def _quiet(self, now: datetime) -> None:
         self._unsub_timer = None
         self.async_write_ha_state()
