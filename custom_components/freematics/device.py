@@ -58,6 +58,7 @@ class Trip:
     """A trip under way: what's been added up since its start."""
 
     start: int  # Unix time
+    end: int = 0  # Unix time of the last record added
     distance_m: float = 0.0
     max_speed_kmh: int = 0
     latitude: float | None = None  # the last point
@@ -65,6 +66,7 @@ class Trip:
 
     def add(self, record: Record) -> None:
         """Add a record's leg from the last point."""
+        self.end = max(self.end, record.time)
         if record.latitude is None or record.longitude is None:
             return
         if self.latitude is not None and self.longitude is not None:
@@ -324,6 +326,7 @@ class FreematicsDevice:
     ) -> None:
         """Follow trips: their starts and stops, and what they add up to."""
         if record.kind == "start":
+            self._end_trip_without_stop(events)
             self.moving = True
             self.trip = Trip(start=record.time)
             self.trip.add(record)
@@ -338,11 +341,41 @@ class FreematicsDevice:
             self.trip = None
             events.append(self._event(EVENT_TRIP_STOPPED, when, record, data))
         elif record.kind == "heartbeat":
+            # A heartbeat comes only from a parked dongle
             self.moving = False
+            self._end_trip_without_stop(events)
         else:
             self.moving = True
             if self.trip is not None:
                 self.trip.add(record)
+
+    def _end_trip_without_stop(self, events: list[DeviceEvent]) -> None:
+        """End a trip whose stop never came, at its last record.
+
+        A dongle that restarts on a trip (unplugged, or a crash) forgets it:
+        its next record is a heartbeat or another trip's start, never the stop.
+        """
+        if self.trip is None:
+            return
+        _LOGGER.debug(
+            "%s: the trip's stop never came; ending it at its last record",
+            self._name,
+        )
+        end = self.trip.end
+        if not end:  # a trip saved before its end was kept: its last position
+            end = int(self.position_time.timestamp()) if self.position_time else 0
+            end = max(end, self.trip.start)
+        self.last_trip = self.trip.summary(end)
+        events.append(
+            DeviceEvent(
+                EVENT_TRIP_STOPPED,
+                datetime.fromtimestamp(end, UTC),
+                self.trip.latitude,
+                self.trip.longitude,
+                {**asdict(self.last_trip), "stop_missed": True},
+            )
+        )
+        self.trip = None
 
     @staticmethod
     def _event(

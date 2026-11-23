@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import base64
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import patch
 
@@ -360,3 +360,62 @@ async def test_reporting_follows_what_the_dongle_said(
     assert hass.states.get("binary_sensor.volvo_reporting").state == "off"
     # Unloading cancels the timer.
     await hass.config_entries.async_unload(loaded.entry_id)
+
+
+async def test_a_heartbeat_ends_a_trip_whose_stop_never_came(
+    hass: HomeAssistant, loaded: MockConfigEntry, hass_client_no_auth
+) -> None:
+    # The dongle restarted on the trip (unplugged): no stop, then a heartbeat.
+    await post(hass_client_no_auth, batch(trip()))
+    heartbeat = {"kind": "heartbeat", "time": T + 300, "battery": 4.6}
+    await post(hass_client_no_auth, batch([heartbeat], sequence=500))
+    await hass.async_block_till_done()
+    event = hass.states.get("event.volvo_trip").attributes
+    assert event["event_type"] == "trip_stopped"
+    assert event["stop_missed"] is True
+    # It ends at the trip's last record, where that record was.
+    assert event["recorded_at"] == datetime.fromtimestamp(T + 10, UTC).isoformat()
+    assert event["latitude"] == 43.8190
+    assert event["duration_min"] == 0.2
+    assert hass.states.get("sensor.volvo_last_trip_top_speed").state == "48"
+    assert hass.states.get("binary_sensor.volvo_moving").state == "off"
+
+
+async def test_a_new_start_ends_a_trip_whose_stop_never_came(
+    hass: HomeAssistant, loaded: MockConfigEntry, hass_client_no_auth
+) -> None:
+    await post(hass_client_no_auth, batch(trip()))
+    later = [{**record, "time": record["time"] + 3600} for record in trip()]
+    await post(hass_client_no_auth, batch(later, sequence=900))
+    await hass.async_block_till_done()
+    # The first trip was summed up; the second is under way.
+    assert hass.states.get("sensor.volvo_last_trip_top_speed").state == "48"
+    assert hass.states.get("event.volvo_trip").attributes["event_type"] == (
+        "trip_started"
+    )
+
+
+async def test_a_trip_saved_without_its_end_ends_at_the_last_position(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    entry: MockConfigEntry,
+    hass_client_no_auth,
+) -> None:
+    hass_storage[f"{DOMAIN}.{entry.entry_id}"] = {
+        "version": 1,
+        "key": f"{DOMAIN}.{entry.entry_id}",
+        "data": {
+            "last_time": T + 60,
+            "position_time": T + 60,
+            "trip": {"start": T, "distance_m": 1500.0, "max_speed_kmh": 70},
+        },
+    }
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    heartbeat = {"kind": "heartbeat", "time": T + 600}
+    await post(hass_client_no_auth, batch([heartbeat]))
+    await hass.async_block_till_done()
+    event = hass.states.get("event.volvo_trip").attributes
+    assert event["duration_min"] == 1.0
+    assert event["distance_km"] == 1.5
