@@ -21,4 +21,6 @@ First release: Freematics ONE+ GPS dongles running ESPHome for Freematics, in Ho
 
 ### Internal
 
+- The README suggests the places integration for street addresses.
+
 - The license names the copyright holder as Elias Hunt (raetha).

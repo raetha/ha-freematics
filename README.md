@@ -20,6 +20,8 @@ Not released yet: it's being built and tested.
 
 The address is the dongle's only key: keep it private.
 
+For a street address like Traccar's, add the [places](https://github.com/custom-components/places) integration (from HACS) with the dongle's device tracker: it looks positions up in OpenStreetMap, with no key. Home Assistant has no address lookup of its own.
+
 ## Troubleshooting
 
 Diagnostics (the device's ⋮ menu → Download diagnostics) are safe to post: they count the batches and records received, those missed or sent twice, and how late the newest one arrived, with the webhook ID redacted and no coordinates. For more, turn on debug logging (Settings → Devices & services → Freematics → ⋮ → Enable debug logging): each batch and every record in it is logged, coordinates included, so check a debug log before posting it.
