@@ -221,7 +221,7 @@ async def test_entities_have_stable_ids(
         for key in (
             "location",
             "moving",
-            "reporting",
+            "live_tracking",
             "trip",
             "impact",
             "temperature",
@@ -350,39 +350,39 @@ async def test_next_report_due_follows_what_the_dongle_said(
     assert due() == dt_util.utc_from_timestamp(T + 60 + (361 + 15) * 60).isoformat()
 
 
-async def test_reporting_is_on_while_a_trip_streams(
+async def test_live_tracking_is_on_while_a_trip_streams(
     hass: HomeAssistant, loaded: MockConfigEntry, hass_client_no_auth, freezer
 ) -> None:
-    def reporting() -> str:
-        return hass.states.get("binary_sensor.volvo_reporting").state
+    def live() -> str:
+        return hass.states.get("binary_sensor.volvo_live_tracking").state
 
     start = dt_util.utcnow()
-    assert reporting() == "off"
+    assert live() == "off"
     # Parked heartbeats aren't a trip streaming.
     await post(hass_client_no_auth, batch([{"kind": "heartbeat", "time": T}]))
     await hass.async_block_till_done()
-    assert reporting() == "off"
+    assert live() == "off"
     await post(hass_client_no_auth, batch(trip(), sequence=2))
     await hass.async_block_till_done()
-    assert reporting() == "on"
+    assert live() == "on"
     # Batches every 2 minutes keep it on; 5 minutes without one turn it off.
     freezer.move_to(start + timedelta(minutes=4))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
-    assert reporting() == "on"
+    assert live() == "on"
     freezer.move_to(start + timedelta(minutes=6))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
-    assert reporting() == "off"
+    assert live() == "off"
     # Back in coverage, then the stop: off.
     fix = {"kind": "fix", "time": T + 400, "lat": 43.82, "lon": -72.27, "speed": 50}
     await post(hass_client_no_auth, batch([fix], sequence=3))
     await hass.async_block_till_done()
-    assert reporting() == "on"
+    assert live() == "on"
     stop = {"kind": "stop", "time": T + 500, "lat": 43.83, "lon": -72.27}
     await post(hass_client_no_auth, batch([stop], sequence=4))
     await hass.async_block_till_done()
-    assert reporting() == "off"
+    assert live() == "off"
     # Unloading cancels the timer.
     await post(
         hass_client_no_auth,

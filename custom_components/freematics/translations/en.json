@@ -29,8 +29,8 @@
       "moving": {
         "name": "Moving"
       },
-      "reporting": {
-        "name": "Reporting"
+      "live_tracking": {
+        "name": "Live tracking"
       }
     },
     "event": {

@@ -1,4 +1,4 @@
-"""Whether the car is on a trip, and whether the dongle is reporting."""
+"""Whether the car is on a trip, and whether the dongle is tracking it live."""
 
 from __future__ import annotations
 
@@ -22,9 +22,12 @@ async def async_setup_entry(
     entry: FreematicsConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """The moving and reporting sensors."""
+    """The moving and live tracking sensors."""
     async_add_entities(
-        [FreematicsMoving(entry, "moving"), FreematicsReporting(entry, "reporting")]
+        [
+            FreematicsMoving(entry, "moving"),
+            FreematicsLiveTracking(entry, "live_tracking"),
+        ]
     )
 
 
@@ -41,7 +44,7 @@ class FreematicsMoving(FreematicsEntity, BinarySensorEntity):
         return self.device.moving
 
 
-class FreematicsReporting(FreematicsEntity, BinarySensorEntity):
+class FreematicsLiveTracking(FreematicsEntity, BinarySensorEntity):
     """On while the dongle streams a trip: on a trip, with a batch arriving at
     least every few minutes. Off when parked or asleep, and when a trip's
     batches stop coming (out of coverage, unplugged). Whether a quiet dongle is
@@ -50,7 +53,7 @@ class FreematicsReporting(FreematicsEntity, BinarySensorEntity):
 
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_translation_key = "reporting"
+    _attr_translation_key = "live_tracking"
     _unsub_timer: CALLBACK_TYPE | None = None
 
     @property
