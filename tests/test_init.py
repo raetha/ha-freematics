@@ -365,12 +365,12 @@ async def test_live_tracking_is_on_while_a_trip_streams(
     await post(hass_client_no_auth, batch(trip(), sequence=2))
     await hass.async_block_till_done()
     assert live() == "on"
-    # Batches every 2 minutes keep it on; 5 minutes without one turn it off.
-    freezer.move_to(start + timedelta(minutes=4))
+    # Batches every 5 minutes keep it on; 10 minutes without one turn it off.
+    freezer.move_to(start + timedelta(minutes=9))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert live() == "on"
-    freezer.move_to(start + timedelta(minutes=6))
+    freezer.move_to(start + timedelta(minutes=11))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
     assert live() == "off"
@@ -483,3 +483,40 @@ async def test_a_trip_saved_without_its_end_ends_at_the_last_position(
     event = hass.states.get("event.volvo_trip").attributes
     assert event["duration_min"] == 1.0
     assert event["distance_km"] == 1.5
+
+
+async def test_a_start_dated_before_a_record_already_taken(
+    hass: HomeAssistant, loaded: MockConfigEntry, hass_client_no_auth
+) -> None:
+    # On waking, the dongle reported a heartbeat where it was parked; its GPS
+    # found a fix only once the car was under way, and the trip is dated when
+    # the motion sensor first felt it, before that heartbeat.
+    parked = {"kind": "heartbeat", "time": T + 30, "lat": 43.8185, "lon": -72.2787}
+    await post(hass_client_no_auth, batch([parked]))
+    started = [
+        {"kind": "start", "time": T + 20, "battery": 14.1},
+        {"kind": "fix", "time": T + 200, "lat": 43.8275, "lon": -72.2787, "speed": 50},
+    ]
+    await post(hass_client_no_auth, batch(started, sequence=2))
+    await hass.async_block_till_done()
+    event = hass.states.get("event.volvo_trip").attributes
+    # From where the car was parked, when the motion sensor first felt it
+    assert event["event_type"] == "trip_started"
+    assert event["recorded_at"] == datetime.fromtimestamp(T + 20, UTC).isoformat()
+    assert event["latitude"] == 43.8185
+    # The newest record shows where the car is
+    assert hass.states.get("device_tracker.volvo").attributes["latitude"] == 43.8275
+    stop = {"kind": "stop", "time": T + 500, "lat": 43.8275, "lon": -72.2787}
+    await post(hass_client_no_auth, batch([stop], sequence=3))
+    await hass.async_block_till_done()
+    event = hass.states.get("event.volvo_trip").attributes
+    assert event["event_type"] == "trip_stopped"
+    assert event["duration_min"] == 8.0
+    assert event["distance_km"] == pytest.approx(1.0, abs=0.02)
+    # Sent again (the dongle missed the answer): not a second trip
+    await post(hass_client_no_auth, batch(started, sequence=4))
+    await hass.async_block_till_done()
+    assert hass.states.get("event.volvo_trip").attributes["event_type"] == (
+        "trip_stopped"
+    )
+    assert hass.states.get("binary_sensor.volvo_moving").state == "off"

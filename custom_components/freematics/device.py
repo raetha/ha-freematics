@@ -139,6 +139,9 @@ class FreematicsDevice:
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}"
         )
         self.last_time = 0  # Unix time of the newest record taken
+        # Unix time of the newest trip start taken: a start can be dated
+        # before records already taken (below), and is taken only once.
+        self.last_start = 0
         self.position: Position | None = None
         self.position_time: datetime | None = None
         self.moving: bool | None = None
@@ -194,6 +197,7 @@ class FreematicsDevice:
         if not data:
             return
         self.last_time = data.get("last_time", 0)
+        self.last_start = data.get("last_start", 0)
         if (position := data.get("position")) is not None:
             self.position = Position(**position)
         if (position_time := data.get("position_time")) is not None:
@@ -213,6 +217,7 @@ class FreematicsDevice:
     def _data_to_save(self) -> dict[str, Any]:
         return {
             "last_time": self.last_time,
+            "last_start": self.last_start,
             "position": asdict(self.position) if self.position else None,
             "position_time": (
                 self.position_time.timestamp() if self.position_time else None
@@ -273,14 +278,21 @@ class FreematicsDevice:
         identity_changed = False
         taken = 0
         for record in records:
-            if record.time <= self.last_time:
+            # A trip's start is dated when the car started moving, which can
+            # be before a record the dongle sent while its GPS was still
+            # finding a fix (a heartbeat on waking): it's still news, once.
+            late_start = (
+                record.kind == "start"
+                and record.time <= self.last_time
+                and record.time > self.last_start
+            )
+            if record.time <= self.last_time and not late_start:
                 # Sent again because the dongle missed our answer.
                 self.repeats += 1
                 _LOGGER.debug("%s: repeat of %s, skipped", self._name, record)
                 continue
             taken += 1
             self.kinds[record.kind] += 1
-            self.last_time = record.time
             when = datetime.fromtimestamp(record.time, UTC)
             _LOGGER.debug(
                 "%s: %s, %d s old: %s",
@@ -289,6 +301,12 @@ class FreematicsDevice:
                 int((received - when).total_seconds()),
                 record,
             )
+            if late_start:
+                # Only the trip: the rest describes an earlier moment than
+                # what's shown now.
+                self._trip_record(record, when, events)
+                continue
+            self.last_time = record.time
             if record.latitude is not None and record.longitude is not None:
                 self.position = Position(
                     latitude=record.latitude,
@@ -358,9 +376,23 @@ class FreematicsDevice:
         if record.kind == "start":
             self._end_trip_without_stop(events)
             self.moving = True
+            self.last_start = max(self.last_start, record.time)
             self.trip = Trip(start=record.time)
+            if record.latitude is None and self.position is not None:
+                # Dated before the GPS had a fix: the car was still where it
+                # was parked, the last position known.
+                self.trip.latitude = self.position.latitude
+                self.trip.longitude = self.position.longitude
             self.trip.add(record)
-            events.append(self._event(EVENT_TRIP_STARTED, when, record, {}))
+            events.append(
+                DeviceEvent(
+                    EVENT_TRIP_STARTED,
+                    when,
+                    self.trip.latitude,
+                    self.trip.longitude,
+                    {},
+                )
+            )
         elif record.kind == "stop":
             self.moving = False
             data: dict[str, Any] = {}
