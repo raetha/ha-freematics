@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
-
 import base64
+
+import pytest
 
 from custom_components.freematics.compact import CompactError, decode, decode_body
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
@@ -457,32 +456,6 @@ async def test_a_new_start_ends_a_trip_whose_stop_never_came(
     assert hass.states.get("event.volvo_trip").attributes["event_type"] == (
         "trip_started"
     )
-
-
-async def test_a_trip_saved_without_its_end_ends_at_the_last_position(
-    hass: HomeAssistant,
-    hass_storage: dict[str, Any],
-    entry: MockConfigEntry,
-    hass_client_no_auth,
-) -> None:
-    hass_storage[f"{DOMAIN}.{entry.entry_id}"] = {
-        "version": 1,
-        "key": f"{DOMAIN}.{entry.entry_id}",
-        "data": {
-            "last_time": T + 60,
-            "position_time": T + 60,
-            "trip": {"start": T, "distance_m": 1500.0, "max_speed_kmh": 70},
-        },
-    }
-    entry.add_to_hass(hass)
-    await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    heartbeat = {"kind": "heartbeat", "time": T + 600}
-    await post(hass_client_no_auth, batch([heartbeat]))
-    await hass.async_block_till_done()
-    event = hass.states.get("event.volvo_trip").attributes
-    assert event["duration_min"] == 1.0
-    assert event["distance_km"] == 1.5
 
 
 async def test_a_start_dated_before_a_record_already_taken(

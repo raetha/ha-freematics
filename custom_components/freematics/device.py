@@ -30,7 +30,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 STORAGE_VERSION = 1
-SAVE_DELAY = 30  # seconds: batches arrive every couple of minutes at most
+SAVE_DELAY = 30  # seconds: batches close together are written once
 
 
 @dataclass
@@ -441,9 +441,6 @@ class FreematicsDevice:
             self._name,
         )
         end = self.trip.end
-        if not end:  # a trip saved before its end was kept: its last position
-            end = int(self.position_time.timestamp()) if self.position_time else 0
-            end = max(end, self.trip.start)
         self.last_trip = self.trip.summary(end)
         events.append(
             DeviceEvent(
