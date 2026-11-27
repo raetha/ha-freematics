@@ -520,3 +520,32 @@ async def test_a_start_dated_before_a_record_already_taken(
         "trip_stopped"
     )
     assert hass.states.get("binary_sensor.volvo_moving").state == "off"
+
+
+async def test_a_stop_dated_before_a_record_already_taken(
+    hass: HomeAssistant, loaded: MockConfigEntry, hass_client_no_auth
+) -> None:
+    # The car parked and the dongle lost power before its stop delay ran out;
+    # powered again later, it reports the stop at the trip's last fix at moving
+    # speed, older than the slow fixes it sent while parking
+    started = [
+        {"kind": "start", "time": T, "lat": 43.8185, "lon": -72.2787},
+        {"kind": "fix", "time": T + 300, "lat": 43.8275, "lon": -72.2787, "speed": 40},
+        {"kind": "fix", "time": T + 340, "lat": 43.8276, "lon": -72.2787, "speed": 0},
+    ]
+    await post(hass_client_no_auth, batch(started))
+    stop = {"kind": "stop", "time": T + 300, "lat": 43.8275, "lon": -72.2787}
+    await post(hass_client_no_auth, batch([stop], sequence=2))
+    await hass.async_block_till_done()
+    event = hass.states.get("event.volvo_trip").attributes
+    assert event["event_type"] == "trip_stopped"
+    assert event["recorded_at"] == datetime.fromtimestamp(T + 300, UTC).isoformat()
+    assert event["duration_min"] == 5.0
+    assert "stop_missed" not in event
+    assert hass.states.get("binary_sensor.volvo_moving").state == "off"
+    # Sent again: no trip left to stop
+    await post(hass_client_no_auth, batch([stop], sequence=3))
+    await hass.async_block_till_done()
+    assert hass.states.get("event.volvo_trip").attributes["event_type"] == (
+        "trip_stopped"
+    )

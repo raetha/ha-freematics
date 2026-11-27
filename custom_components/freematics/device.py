@@ -281,12 +281,17 @@ class FreematicsDevice:
             # A trip's start is dated when the car started moving, which can
             # be before a record the dongle sent while its GPS was still
             # finding a fix (a heartbeat on waking): it's still news, once.
-            late_start = (
-                record.kind == "start"
-                and record.time <= self.last_time
-                and record.time > self.last_start
+            # Likewise a stop dated at the trip's last fix at moving speed,
+            # reported after a restart: the car parked, then the power went.
+            late_trip = record.time <= self.last_time and (
+                (record.kind == "start" and record.time > self.last_start)
+                or (
+                    record.kind == "stop"
+                    and self.trip is not None
+                    and record.time >= self.trip.start
+                )
             )
-            if record.time <= self.last_time and not late_start:
+            if record.time <= self.last_time and not late_trip:
                 # Sent again because the dongle missed our answer.
                 self.repeats += 1
                 _LOGGER.debug("%s: repeat of %s, skipped", self._name, record)
@@ -301,7 +306,7 @@ class FreematicsDevice:
                 int((received - when).total_seconds()),
                 record,
             )
-            if late_start:
+            if late_trip:
                 # Only the trip: the rest describes an earlier moment than
                 # what's shown now.
                 self._trip_record(record, when, events)
